@@ -13,8 +13,9 @@ import time
 MODEL_DIR = "local_models"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-st.set_page_config(page_title="Portable Offline Document Analyzer (RAG Chatbot)", layout="wide", page_icon="💾")
-st.title("💾 Portable Offline Document Analyzer (RAG Chatbot)")
+st.set_page_config(page_title="Universal File Explorer", layout="wide")
+st.title("🕵️‍♂️ Universal File Explorer 📂")
+# st.markdown("<h1 style='font-family: sans-serif;'>🕵️‍♂️🗂️ Universal File Explorer</h1>", unsafe_allow_html=True)
 st.caption("100% Private local execution using GGUF models on your CPU.")
 
 # Cache embedding model cleanly to prevent massive reload lag inside Streamlit loops
@@ -29,12 +30,12 @@ embeddings = load_embedding_model()
 # 1. SIDEBAR CONFIGURATION (Models & Files)
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.header("🎛️ AI Engine Configuration")
+    st.header("⚙️ Model Configuration")
     
     st.markdown("""
-    **Recommended Free Showcases:**
-    * 🚀 [Download Qwen 2.5 1.5B (Fastest)](https://huggingface.co)
-    * 🧠 [Download Llama 3.2 3B (Smartest)](https://huggingface.co)
+    **Sample Models used in this App:**
+    * [Download Qwen 2.5 1.5B (Fastest)](https://huggingface.co)
+    * [Download Llama 3.2 3B (Smartest)](https://huggingface.co)
     """)
     
     # Drag-and-drop model file uploader
