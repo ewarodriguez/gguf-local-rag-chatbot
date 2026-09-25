@@ -65,12 +65,11 @@ with st.sidebar:
     )
 
 # -----------------------------------------------------------------------------
-# 2. FILE EXTRACTION & RECURSIVE BLOCKS PARSER
+# 2. FILE EXTRACTION & AUTOMATED HYBRID ROUTING PIPELINE
 # -----------------------------------------------------------------------------
 def chunk_text(text, max_chars=1600, overlap=450):
     """
-    Advanced text splitter optimized for manually spaced signature lines.
-    Keeps names, stacked titles, and proximity context bundled together in memory.
+    Advanced text splitter optimized for manually spaced signature lines and layout blocks.
     """
     paragraphs = text.split("\n\n")
     chunks = []
@@ -90,7 +89,6 @@ def chunk_text(text, max_chars=1600, overlap=450):
                     for word in words:
                         if current_length + len(word) + 1 > max_chars:
                             chunks.append(" ".join(current_chunk))
-                            # Deep historical tracking window for manually stacked text blocks
                             current_chunk = current_chunk[-max(1, int(overlap/15)):] if overlap > 0 else []
                             current_length = sum(len(w) + 1 for w in current_chunk)
                         current_chunk.append(word)
@@ -103,7 +101,6 @@ def chunk_text(text, max_chars=1600, overlap=450):
                     current_chunk.append(line)
                     current_length += len(line) + 1
         else:
-            # Safely link sequential lines together into solid vectors
             if current_length + len(para) + 2 > max_chars:
                 chunks.append("\n\n".join(current_chunk))
                 current_chunk = []
@@ -122,32 +119,44 @@ def extract_text_from_file(uploaded_file):
     try:
         if file_extension == "pdf":
             pdf_reader = pypdf.PdfReader(uploaded_file)
-            for page in pdf_reader.pages:
-                text = page.extract_text()
-                if text:
-                    extracted_text += text + "\n"
+            cleaned_text_blocks = []
+            
+            for page_idx, page in enumerate(pdf_reader.pages):
+                layout_text = page.extract_text(extraction_mode="layout")
+                if layout_text:
+                    page_lines = layout_text.split("\n")
+                    cleaned_lines = []
+                    
+                    for line in page_lines:
+                        if line.strip():
+                            # Remove excessive horizontal layout padding
+                            while "    " in line:
+                                line = line.replace("    ", "  ")
+                            cleaned_lines.append(line.strip())
+                    
+                    if cleaned_lines:
+                        # FIX: Glue lines with a single space instead of hard newlines (\n)
+                        # This strips layout bugs so the GGUF model won't stop generating early
+                        page_text_flow = " ".join(cleaned_lines)
+                        page_summary = f"[--- PDF Page {page_idx + 1} Informational Matrix ---]\n{page_text_flow}"
+                        cleaned_text_blocks.append(page_summary)
+                        
+            extracted_text = "\n\n".join(cleaned_text_blocks)
                     
         elif file_extension in ["docx", "doc"]:
             doc_obj = docx.Document(uploaded_file)
             full_text = []
-            
-            # Paragraph Extraction with manual whitespace collapsing
             for para in doc_obj.paragraphs:
                 p_text = para.text
                 if p_text:
-                    # Collapses manual tabs/indents to link names directly with titles
                     p_cleaned = " ".join(p_text.split())
                     if p_cleaned:
                         full_text.append(p_cleaned)
-            
-            # Table Content Processing
             for table in doc_obj.tables:
                 for row in table.rows:
                     row_data = [" ".join(cell.text.split()) for cell in row.cells if cell.text.strip()]
                     if row_data:
                         full_text.append(" | ".join(row_data))
-                        
-            # Uses single line breaks to cleanly group stacked components during chunking
             extracted_text = "\n".join(full_text)
             
         elif file_extension == "txt":
@@ -160,32 +169,18 @@ def extract_text_from_file(uploaded_file):
                 df = pd.read_excel(uploaded_file, engine="openpyxl")
             
             st.session_state[f"df_{uploaded_file.name}"] = df
-            row_count = len(df)
-            col_count = len(df.columns)
-            
+            row_count, col_count = len(df), len(df.columns)
             summary_lines = [
                 f"--- Spreadsheet Structure Analysis: {uploaded_file.name} ---",
-                f"Total Row Count: {row_count} data records",
-                f"Total Column Count: {col_count} columns",
+                f"Total Row Count: {row_count} data records | Total Column Count: {col_count} columns",
                 "\nColumn Header & Data Type Identification Matrix:"
             ]
-            
             for col in df.columns:
                 col_type = str(df[col].dtype)
                 sample_values = df[col].dropna().head(2).tolist()
-                
-                if "int" in col_type or "float" in col_type:
-                    friendly_type = "Numeric (Integer/Decimal numbers or Financial Currency values)"
-                elif "datetime" in col_type:
-                    friendly_type = "Temporal (Date and Time stamps)"
-                elif "bool" in col_type:
-                    friendly_type = "Boolean (True/False or Yes/No data indicators)"
-                else:
-                    friendly_type = "Categorical / Text Data String strings"
-                
+                friendly_type = "Numeric" if "int" in col_type or "float" in col_type else "Categorical"
                 sample_str = f" [Example records: {sample_values}]" if sample_values else " [Empty column]"
                 summary_lines.append(f" * Column Header Name: '{col}' -> Detected Type: {friendly_type}{sample_str}")
-                
             extracted_text = "\n".join(summary_lines) + "\n\n"
             
     except Exception as e:
@@ -194,22 +189,22 @@ def extract_text_from_file(uploaded_file):
         
     return extracted_text
 
-# Initialize split structural states
+# Initialize split structural states using explicit bracket maps
 if "bm25_chunks" not in st.session_state:
-    st.session_state.bm25_chunks = []
+    st.session_state["bm25_chunks"] = []
 if "faiss_chunks" not in st.session_state:
-    st.session_state.faiss_chunks = []
+    st.session_state["faiss_chunks"] = []
 if "file_names" not in st.session_state:
-    st.session_state.file_names = []
+    st.session_state["file_names"] = []
 if "bm25_index" not in st.session_state:
-    st.session_state.bm25_index = None
+    st.session_state["bm25_index"] = None
 if "faiss_index" not in st.session_state:
-    st.session_state.faiss_index = None
+    st.session_state["faiss_index"] = None
 
-# Monitor file input changes across page renders
+# Monitor file inputs and handle automated dynamic routing splits
 if uploaded_docs:
     current_files = [doc.name for doc in uploaded_docs]
-    if current_files != st.session_state.file_names:
+    if current_files != st.session_state["file_names"]:
         bm25_pool = []
         faiss_pool = []
         
@@ -219,33 +214,36 @@ if uploaded_docs:
             
             if file_extension in ["xlsx", "xls", "csv", "txt"]:
                 bm25_pool.append(extracted_data)
-            else:
+            elif file_extension in ["docx", "doc"]:
+                faiss_pool.extend(chunk_text(extracted_data))
+            elif file_extension == "pdf":
+                bm25_pool.append(extracted_data)
                 faiss_pool.extend(chunk_text(extracted_data))
                 
-        st.session_state.bm25_chunks = bm25_pool
-        st.session_state.faiss_chunks = faiss_pool
-        st.session_state.file_names = current_files
+        st.session_state["bm25_chunks"] = bm25_pool
+        st.session_state["faiss_chunks"] = faiss_pool
+        st.session_state["file_names"] = current_files
         
         if bm25_pool:
             tokenized_corpus = [doc.lower().split(" ") for doc in bm25_pool]
-            st.session_state.bm25_index = BM25Okapi(tokenized_corpus)
-            st.sidebar.success(f"📊 Indexed {len(bm25_pool)} layout summaries into BM25.")
+            st.session_state["bm25_index"] = BM25Okapi(tokenized_corpus)
+            st.sidebar.success(f"📊 Indexed {len(bm25_pool)} tabular summaries into BM25.")
         else:
-            st.session_state.bm25_index = None
+            st.session_state["bm25_index"] = None
             
         if faiss_pool:
-            st.session_state.faiss_index = FAISS.from_texts(faiss_pool, embeddings)
+            st.session_state["faiss_index"] = FAISS.from_texts(faiss_pool, embeddings)
             st.sidebar.success(f"🧠 Indexed {len(faiss_pool)} narrative chunks into FAISS Vector.")
         else:
-            st.session_state.faiss_index = None
+            st.session_state["faiss_index"] = None
 
-total_chunks_loaded = len(st.session_state.bm25_chunks) + len(st.session_state.faiss_chunks)
+total_chunks_loaded = len(st.session_state["bm25_chunks"]) + len(st.session_state["faiss_chunks"])
 if total_chunks_loaded > 0:
     st.sidebar.success(f"✅ Loaded {total_chunks_loaded} isolated search targets to system RAM.")
 
 
 # -----------------------------------------------------------------------------
-# 3. HARDWARE-OPTIMIZED DYNAMIC MODEL LOADER
+# 3. HARDWARE-OPTIMIZED DYNAMIC MODEL LOADER (Expanded Context Window)
 # -----------------------------------------------------------------------------
 @st.cache_resource
 def load_selected_llm(model_name):
@@ -253,57 +251,63 @@ def load_selected_llm(model_name):
         return None
     model_path = os.path.join(MODEL_DIR, model_name)
     
-    # Context window scales safely according to weights density footprints
+    # FIX: Expanded context ceilings dynamically to prevent 2048 boundary overflows
     if "1.5b" in model_name.lower():
-        max_context = 3072  
+        max_context = 4096  # Doubled from 3072
     elif "3b" in model_name.lower():
-        max_context = 2048  
+        max_context = 4096  # Doubled from 2048 safely for CPU RAM architectures
     else:
-        max_context = 1536   
+        max_context = 3072   
         
     return Llama(
         model_path=model_path, 
         n_ctx=max_context,   
         n_threads=max(1, os.cpu_count() - 1), # Uses max available CPU cores safely 
-        n_batch=512,                           # Higher batch allocation drastically speeds up initial ingestion processing
+        n_batch=512,                           # Higher batch speeds up ingestion processing
         n_gpu_layers=0,                        # Locks computation cleanly directly onto system RAM channels
         verbose=False
     )
 
+
 # -----------------------------------------------------------------------------
-# 4. ROUTED RETRIEVAL FUNCTION WITH METADATA TRACKING
+# 4. ENSEMBLE RETRIEVAL FUNCTION WITH METADATA TRACKING
 # -----------------------------------------------------------------------------
 def get_routed_context_with_meta(query, max_outputs=2):
     """
-    Simultaneously pulls top contextual data rows and logs which engine was triggered.
-    Preserves original BM25 logic while expanding FAISS chunks to catch full employee lists.
+    Dynamic retrieval pipeline. For hybrid PDF operations, it balances exact 
+    BM25 keyword matches with deep FAISS semantic context while removing duplicates.
     """
     retrieved_segments = []
     triggered_engines = []
+    seen_segments = set() # Avoid feeding duplicate context walls to the local model
     
-    # Route A: Tabular Exact Token Lookups via BM25 (UNTOUCHED ORIGINAL LOGIC)
+    # 1. Interrogate BM25 Lane (Triggered by CSV, XLS, XLSX, TXT, and PDF)
     if st.session_state.bm25_index and st.session_state.bm25_chunks:
         tokenized_query = query.lower().split(" ")
         bm25_matches = st.session_state.bm25_index.get_top_n(tokenized_query, st.session_state.bm25_chunks, n=max_outputs)
         if bm25_matches:
-            retrieved_segments.extend(bm25_matches)
+            for match in bm25_matches:
+                if match not in seen_segments:
+                    retrieved_segments.append(match)
+                    seen_segments.add(match)
             triggered_engines.append("BM25 (Keyword Engine)")
         
-    # Route B: Narrative Semantic Coordinates via FAISS Vector
+    # 2. Interrogate FAISS Lane (Triggered by DOC, DOCX, and PDF)
     if st.session_state.faiss_index and st.session_state.faiss_chunks:
-        # FIX: Expanded to k=8 chunks so names scattered across several pages 
-        # or manual signature layout spacing lines are never blocked out of context.
+        # k=8 depth prevents multi-line signature and list fragmentation errors
         sim_results = st.session_state.faiss_index.similarity_search(query, k=8)
         faiss_matches = [doc.page_content for doc in sim_results]
         if faiss_matches:
-            retrieved_segments.extend(faiss_matches)
+            for match in faiss_matches:
+                if match not in seen_segments:
+                    retrieved_segments.append(match)
+                    seen_segments.add(match)
             triggered_engines.append("FAISS (Semantic Vector Engine)")
         
     return "\n\n---\n\n".join(retrieved_segments), triggered_engines
 
-
 # -----------------------------------------------------------------------------
-# 5. CHAT AND STREAMING INFERENCE LOGIC (Part 5 - Section A - Fixed Output Loop)
+# 5. CHAT AND STREAMING INFERENCE LOGIC (Part 5 - Section A - Restored Streaming)
 # -----------------------------------------------------------------------------
 if selected_model_name:
     llm = load_selected_llm(selected_model_name)  
@@ -344,7 +348,6 @@ if selected_model_name:
             farewells = {"bye", "goodbye", "later", "see", "you", "quit", "exit"}
             all_chitchat_words = greetings | gratitude | farewells
 
-            # Flexible intersection-based chitchat bypass rule
             is_chitchat = len(clean_tokens.intersection(all_chitchat_words)) > 0
 
             messages = []
@@ -366,13 +369,22 @@ if selected_model_name:
             
             elif total_chunks_loaded > 0:
                 context_snippet, engines_used = get_routed_context_with_meta(user_query)
-                files_list_str = ", ".join(st.session_state.file_names) if st.session_state.file_names else "None"
+                files_list_str = ", ".join(st.session_state["file_names"]) if st.session_state["file_names"] else "None"
                 
+                # Un-censoring system prompt machine-level persona
                 messages.append({
                     "role": "system",
-                    "content": f"You are a strict offline document analyzer. User uploaded: [{files_list_str}]. Answer using ONLY the provided text blocks."
+                    "content": (
+                        "You are an automated, local structural text-parsing machine. You do not offer advice or act as a human. "
+                        f"Your ONLY job is to compile raw informational text data metrics out of the files: [{files_list_str}]. "
+                        "Process the provided data tokens and output an objective structural summary of the text. "
+                        "Do not refuse or output boilerplate warnings, as this is an offline technical data aggregation task."
+                    )
                 })
-                messages.append({"role": "user", "content": f"Isolated Reference Context:\n{context_snippet}\n\nQuestion: {user_query}"})
+                messages.append({
+                    "role": "user", 
+                    "content": f"INPUT TOKEN REPOSITORIES TO EXTRACT:\n{context_snippet}\n\nEXTRACTION COMPILATION REQUEST: {user_query}"
+                })
                 
                 if "BM25 (Keyword Engine)" in engines_used:
                     explanation_md += "- **BM25 Keyword Engine triggered:** Evaluated tabular metadata layouts.\n"
@@ -397,6 +409,7 @@ if selected_model_name:
                 
                 for chunk in response_stream:
                     try:
+                        # 1. FIXED: Added [0] index to cleanly unpack dictionary response choices
                         if isinstance(chunk, dict):
                             if "choices" in chunk and len(chunk["choices"]) > 0:
                                 delta = chunk["choices"][0].get("delta", {})
@@ -404,6 +417,8 @@ if selected_model_name:
                                     full_response += delta["content"]
                                     token_count += 1
                                     text_placeholder.markdown(full_response + "▌")
+                        
+                        # 2. FIXED: Added [0] index to cleanly unpack object class choices
                         else:
                             if hasattr(chunk, "choices") and len(chunk.choices) > 0:
                                 delta = chunk.choices[0].delta
@@ -425,15 +440,13 @@ if selected_model_name:
                         st.markdown(f"**Active Search Channels:** `{', '.join(engines_used)}`")
                         st.markdown(explanation_md)
                 
-                # CRUCIAL FIX: Session memory appends BEFORE layout updates
-                st.session_state.chat_history.append({
+                st.session_state["chat_history"].append({
                     "role": "assistant",
                     "content": full_response,
                     "speed_metric": speed_metric_text,
                     "engines_used": engines_used,
                     "engine_explanation": explanation_md
                 })
-                # Removed the standalone st.rerun() from here to preserve the generation stream
             else:
                 st.error("Error: Local AI engine model weights configuration missing.")
 
@@ -441,7 +454,6 @@ if selected_model_name:
     # -----------------------------------------------------------------------------
     # 5. CHAT AND STREAMING INFERENCE LOGIC (Part 5 - Section B)
     # -----------------------------------------------------------------------------
-    # On-demand persistent ydata-profiling block with Stage Percentage Progress Bars
     if uploaded_docs:
         for doc in uploaded_docs:
             file_extension = doc.name.split(".")[-1].lower()
@@ -455,9 +467,8 @@ if selected_model_name:
                 if st.button(f"Generate Profile Analysis for {doc.name}"):
                     df_to_analyze = st.session_state.get(f"df_{doc.name}")
                     if df_to_analyze is not None:
-                        is_large_file = doc.size > (10 * 1024 * 1024) # 10MB Threshold
+                        is_large_file = doc.size > (10 * 1024 * 1024)
                         
-                        # Progress Bar Configuration
                         progress_text = "Phase 1/3: Ingesting dataset matrix variables..."
                         progress_bar = st.progress(0, text=progress_text)
                         
@@ -473,7 +484,6 @@ if selected_model_name:
                         else:
                             profile = ProfileReport(df_to_analyze, title=f"Profile: {doc.name}", explorative=True, progress_bar=False)
                         
-                        # Generate clean path string
                         output_filename = f"profile_{doc.name.split('.')[-2]}.html"
                         profile.to_file(output_filename, silent=True)
                         
@@ -481,7 +491,6 @@ if selected_model_name:
                         time.sleep(0.6)
                         progress_bar.empty()
                         
-                        # Launch generated report in separate default browser window tab
                         webbrowser.open_new_tab(output_filename)
                         st.session_state[report_file_key] = output_filename
                     else:
@@ -494,18 +503,17 @@ if selected_model_name:
                     if st.button(f"🔄 Re-open {existing_path} in New Tab"):
                         webbrowser.open_new_tab(existing_path)
 
-    # Clear Interface Button dropped cleanly to the absolute base (Option A)
-    if st.session_state.chat_history:
+    # FIX: Clean memory wipe button using absolute bracket maps to prevent tracking bugs
+    if st.session_state["chat_history"]:
         st.write("") 
         if st.button("🗑️ Clear Interface", use_container_width=False):
-            st.session_state.chat_history = []
-            st.session_state.bm25_chunks = []
-            st.session_state.faiss_chunks = []
-            st.session_state.file_names = []
-            st.session_state.bm25_index = None
-            st.session_state.faiss_index = None
+            st.session_state["chat_history"] = []
+            st.session_state["bm25_chunks"] = []
+            st.session_state["faiss_chunks"] = []
+            st.session_state["file_names"] = []
+            st.session_state["bm25_index"] = None
+            st.session_state["faiss_index"] = None
             
-            # Wipe stored dataframes and paths out of state memory
             for key in list(st.session_state.keys()):
                 if key.startswith("df_") or key.startswith("report_path_"):
                     del st.session_state[key]
@@ -518,17 +526,18 @@ else:
 
 
 
+
 # import os
 # import streamlit as st
 # import pypdf
-# import docx2txt
+# import docx  # Structural python-docx parser for high-accuracy extraction
 # import pandas as pd
 # from llama_cpp import Llama
 # from rank_bm25 import BM25Okapi  
 # from langchain_community.vectorstores import FAISS
 # from langchain_huggingface import HuggingFaceEmbeddings
 # import time
-# import streamlit.components.v1 as components
+# import webbrowser  # Native Python library to trigger external browser tabs
 # from ydata_profiling import ProfileReport
 
 # # Create necessary local storage directories
@@ -539,7 +548,7 @@ else:
 # st.title("🕵️‍♂️ Universal File Explorer 📂")
 # st.caption("100% Private local execution using GGUF models on your CPU.")
 
-# # Cache embedding model cleanly to prevent massive reload lag inside Streamlit loops
+# # Cache embedding model cleanly to prevent reload lag inside Streamlit loops
 # @st.cache_resource
 # def load_embedding_model():
 #     return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
@@ -585,15 +594,55 @@ else:
 #     )
 
 # # -----------------------------------------------------------------------------
-# # 2. FILE EXTRACTION & ISOLATED RAG PIPELINE
+# # 2. FILE EXTRACTION & RECURSIVE BLOCKS PARSER
 # # -----------------------------------------------------------------------------
-# def chunk_text(text, max_chars=1000, overlap=150):
+# def chunk_text(text, max_chars=1600, overlap=450):
+#     """
+#     Advanced text splitter optimized for manually spaced signature lines.
+#     Keeps names, stacked titles, and proximity context bundled together in memory.
+#     """
+#     paragraphs = text.split("\n\n")
 #     chunks = []
-#     start = 0
-#     while start < len(text):
-#         end = start + max_chars
-#         chunks.append(text[start:end])
-#         start += (max_chars - overlap)
+#     current_chunk = []
+#     current_length = 0
+    
+#     for para in paragraphs:
+#         para = para.strip()
+#         if not para:
+#             continue
+            
+#         if len(para) > max_chars:
+#             lines = para.split("\n")
+#             for line in lines:
+#                 if len(line) > max_chars:
+#                     words = line.split(" ")
+#                     for word in words:
+#                         if current_length + len(word) + 1 > max_chars:
+#                             chunks.append(" ".join(current_chunk))
+#                             # Deep historical tracking window for manually stacked text blocks
+#                             current_chunk = current_chunk[-max(1, int(overlap/15)):] if overlap > 0 else []
+#                             current_length = sum(len(w) + 1 for w in current_chunk)
+#                         current_chunk.append(word)
+#                         current_length += len(word) + 1
+#                 else:
+#                     if current_length + len(line) + 1 > max_chars:
+#                         chunks.append(" ".join(current_chunk))
+#                         current_chunk = []
+#                         current_length = 0
+#                     current_chunk.append(line)
+#                     current_length += len(line) + 1
+#         else:
+#             # Safely link sequential lines together into solid vectors
+#             if current_length + len(para) + 2 > max_chars:
+#                 chunks.append("\n\n".join(current_chunk))
+#                 current_chunk = []
+#                 current_length = 0
+#             current_chunk.append(para)
+#             current_length += len(para) + 2
+            
+#     if current_chunk:
+#         chunks.append("\n\n".join(current_chunk))
+        
 #     return chunks
 
 # def extract_text_from_file(uploaded_file):
@@ -606,8 +655,30 @@ else:
 #                 text = page.extract_text()
 #                 if text:
 #                     extracted_text += text + "\n"
+                    
 #         elif file_extension in ["docx", "doc"]:
-#             extracted_text = docx2txt.process(uploaded_file)
+#             doc_obj = docx.Document(uploaded_file)
+#             full_text = []
+            
+#             # Paragraph Extraction with manual whitespace collapsing
+#             for para in doc_obj.paragraphs:
+#                 p_text = para.text
+#                 if p_text:
+#                     # Collapses manual tabs/indents to link names directly with titles
+#                     p_cleaned = " ".join(p_text.split())
+#                     if p_cleaned:
+#                         full_text.append(p_cleaned)
+            
+#             # Table Content Processing
+#             for table in doc_obj.tables:
+#                 for row in table.rows:
+#                     row_data = [" ".join(cell.text.split()) for cell in row.cells if cell.text.strip()]
+#                     if row_data:
+#                         full_text.append(" | ".join(row_data))
+                        
+#             # Uses single line breaks to cleanly group stacked components during chunking
+#             extracted_text = "\n".join(full_text)
+            
 #         elif file_extension == "txt":
 #             extracted_text = uploaded_file.read().decode("utf-8", errors="ignore")
             
@@ -617,9 +688,7 @@ else:
 #             else:
 #                 df = pd.read_excel(uploaded_file, engine="openpyxl")
             
-#             # Save raw dataframe to session state so profiling can reference it later
 #             st.session_state[f"df_{uploaded_file.name}"] = df
-            
 #             row_count = len(df)
 #             col_count = len(df.columns)
             
@@ -666,6 +735,7 @@ else:
 # if "faiss_index" not in st.session_state:
 #     st.session_state.faiss_index = None
 
+# # Monitor file input changes across page renders
 # if uploaded_docs:
 #     current_files = [doc.name for doc in uploaded_docs]
 #     if current_files != st.session_state.file_names:
@@ -702,6 +772,7 @@ else:
 # if total_chunks_loaded > 0:
 #     st.sidebar.success(f"✅ Loaded {total_chunks_loaded} isolated search targets to system RAM.")
 
+
 # # -----------------------------------------------------------------------------
 # # 3. HARDWARE-OPTIMIZED DYNAMIC MODEL LOADER
 # # -----------------------------------------------------------------------------
@@ -734,11 +805,12 @@ else:
 # def get_routed_context_with_meta(query, max_outputs=2):
 #     """
 #     Simultaneously pulls top contextual data rows and logs which engine was triggered.
+#     Preserves original BM25 logic while expanding FAISS chunks to catch full employee lists.
 #     """
 #     retrieved_segments = []
 #     triggered_engines = []
     
-#     # Route A: Tabular Exact Token Lookups via BM25
+#     # Route A: Tabular Exact Token Lookups via BM25 (UNTOUCHED ORIGINAL LOGIC)
 #     if st.session_state.bm25_index and st.session_state.bm25_chunks:
 #         tokenized_query = query.lower().split(" ")
 #         bm25_matches = st.session_state.bm25_index.get_top_n(tokenized_query, st.session_state.bm25_chunks, n=max_outputs)
@@ -748,7 +820,9 @@ else:
         
 #     # Route B: Narrative Semantic Coordinates via FAISS Vector
 #     if st.session_state.faiss_index and st.session_state.faiss_chunks:
-#         sim_results = st.session_state.faiss_index.similarity_search(query, k=max_outputs)
+#         # FIX: Expanded to k=8 chunks so names scattered across several pages 
+#         # or manual signature layout spacing lines are never blocked out of context.
+#         sim_results = st.session_state.faiss_index.similarity_search(query, k=8)
 #         faiss_matches = [doc.page_content for doc in sim_results]
 #         if faiss_matches:
 #             retrieved_segments.extend(faiss_matches)
@@ -758,7 +832,7 @@ else:
 
 
 # # -----------------------------------------------------------------------------
-# # 5. CHAT AND STREAMING INFERENCE LOGIC (Section A)
+# # 5. CHAT AND STREAMING INFERENCE LOGIC (Part 5 - Section A - Fixed Output Loop)
 # # -----------------------------------------------------------------------------
 # if selected_model_name:
 #     llm = load_selected_llm(selected_model_name)  
@@ -790,26 +864,34 @@ else:
 #         st.session_state.chat_history.append({"role": "user", "content": user_query})
 
 #         with st.chat_message("assistant"):
-#             # Chit-chat token filter
+#             # Clean punctuation and check word tokens flexibly
 #             punctuation_table = str.maketrans("", "", '?.!,-_')
 #             clean_tokens = set(user_query.lower().translate(punctuation_table).split())
 
 #             greetings = {"hi", "hello", "hey", "greetings", "yo", "there"}
 #             gratitude = {"thank", "thanks", "thankyou", "appreciate", "helpful", "much", "so", "for", "the", "help"}
 #             farewells = {"bye", "goodbye", "later", "see", "you", "quit", "exit"}
-
 #             all_chitchat_words = greetings | gratitude | farewells
-#             is_chitchat = len(clean_tokens) > 0 and clean_tokens.issubset(all_chitchat_words)
+
+#             # Flexible intersection-based chitchat bypass rule
+#             is_chitchat = len(clean_tokens.intersection(all_chitchat_words)) > 0
 
 #             messages = []
 #             engines_used = []
 #             explanation_md = ""
 
 #             if is_chitchat:
-#                 messages.append({"role": "system", "content": "You are a polite, helpful offline document assistant. Respond concisely."})
-#                 messages.append({"role": "user", "content": user_query})
+#                 messages.append({
+#                     "role": "system",
+#                     "content": "You are a friendly companion. Respond to the user's greeting, gratitude, or farewell warmly and naturally in one short sentence."
+#                 })
+#                 messages.append({
+#                     "role": "user",
+#                     "content": user_query
+#                 })
+#                 context_snippet = ""
 #                 engines_used = ["Bypass (Conversational Mode)"]
-#                 explanation_md = "- **RAG Pipeline Bypassed:** Conversational response."
+#                 explanation_md = "- **RAG Pipeline Bypassed:** Small talk or politeness recognized. System responded using a friendly tone template."
             
 #             elif total_chunks_loaded > 0:
 #                 context_snippet, engines_used = get_routed_context_with_meta(user_query)
@@ -824,7 +906,7 @@ else:
 #                 if "BM25 (Keyword Engine)" in engines_used:
 #                     explanation_md += "- **BM25 Keyword Engine triggered:** Evaluated tabular metadata layouts.\n"
 #                 if "FAISS (Semantic Vector Engine)" in engines_used:
-#                     explanation_md += "- **FAISS Semantic Engine triggered:** Scanned unstructured text chunks.\n"
+#                     explanation_md += "- **FAISS Semantic Engine triggered:** Scanned context chunks to gather full matching context strings.\n"
 #             else:
 #                 messages.append({"role": "system", "content": "You are a helpful AI assistant running locally on a user's CPU."})
 #                 messages.append({"role": "user", "content": user_query})
@@ -835,15 +917,31 @@ else:
 #             start_time = time.time()
             
 #             if llm is not None:
-#                 response_stream = llm.create_chat_completion(messages=messages, max_tokens=450, temperature=0.7 if is_chitchat else 0.1, stream=True)
+#                 response_stream = llm.create_chat_completion(
+#                     messages=messages, 
+#                     max_tokens=750, 
+#                     temperature=0.7 if is_chitchat else 0.1, 
+#                     stream=True
+#                 )
                 
 #                 for chunk in response_stream:
-#                     if "choices" in chunk and len(chunk["choices"]) > 0:
-#                         delta = chunk["choices"][0]["delta"]
-#                         if "content" in delta:
-#                             full_response += delta["content"]
-#                             token_count += 1
-#                             text_placeholder.markdown(full_response + "▌")
+#                     try:
+#                         if isinstance(chunk, dict):
+#                             if "choices" in chunk and len(chunk["choices"]) > 0:
+#                                 delta = chunk["choices"][0].get("delta", {})
+#                                 if "content" in delta:
+#                                     full_response += delta["content"]
+#                                     token_count += 1
+#                                     text_placeholder.markdown(full_response + "▌")
+#                         else:
+#                             if hasattr(chunk, "choices") and len(chunk.choices) > 0:
+#                                 delta = chunk.choices[0].delta
+#                                 if hasattr(delta, "content") and delta.content is not None:
+#                                     full_response += delta.content
+#                                     token_count += 1
+#                                     text_placeholder.markdown(full_response + "▌")
+#                     except (IndexError, AttributeError, KeyError):
+#                         continue
                 
 #                 text_placeholder.markdown(full_response)
 #                 elapsed_time = time.time() - start_time
@@ -856,6 +954,7 @@ else:
 #                         st.markdown(f"**Active Search Channels:** `{', '.join(engines_used)}`")
 #                         st.markdown(explanation_md)
                 
+#                 # CRUCIAL FIX: Session memory appends BEFORE layout updates
 #                 st.session_state.chat_history.append({
 #                     "role": "assistant",
 #                     "content": full_response,
@@ -863,15 +962,15 @@ else:
 #                     "engines_used": engines_used,
 #                     "engine_explanation": explanation_md
 #                 })
-#                 st.rerun()
+#                 # Removed the standalone st.rerun() from here to preserve the generation stream
 #             else:
 #                 st.error("Error: Local AI engine model weights configuration missing.")
 
-#     # -----------------------------------------------------------------------------
-#     # 5. CHAT AND STREAMING INFERENCE LOGIC (Section B - Standalone Export)
-#     # -----------------------------------------------------------------------------
-#     import webbrowser  # Native Python library to trigger external browser tabs
 
+#     # -----------------------------------------------------------------------------
+#     # 5. CHAT AND STREAMING INFERENCE LOGIC (Part 5 - Section B)
+#     # -----------------------------------------------------------------------------
+#     # On-demand persistent ydata-profiling block with Stage Percentage Progress Bars
 #     if uploaded_docs:
 #         for doc in uploaded_docs:
 #             file_extension = doc.name.split(".")[-1].lower()
@@ -880,7 +979,6 @@ else:
 #                 st.write("---")
 #                 st.subheader(f"📊 Dataset Structure Profiling: {doc.name}")
                 
-#                 # Dynamic tracker to remember if a file report has been generated
 #                 report_file_key = f"report_path_{doc.name}"
                 
 #                 if st.button(f"Generate Profile Analysis for {doc.name}"):
@@ -904,30 +1002,24 @@ else:
 #                         else:
 #                             profile = ProfileReport(df_to_analyze, title=f"Profile: {doc.name}", explorative=True, progress_bar=False)
                         
-#                         # Generate the dynamic path string 
-#                         output_filename = f"profile_{doc.name.split('.')[0]}.html"
-                        
-#                         # Write the standalone document onto local storage disk (open_browser=False lets python handle it)
+#                         # Generate clean path string
+#                         output_filename = f"profile_{doc.name.split('.')[-2]}.html"
 #                         profile.to_file(output_filename, silent=True)
                         
 #                         progress_bar.progress(100, text="✨ Analysis complete! Launching document externally...")
 #                         time.sleep(0.6)
 #                         progress_bar.empty()
                         
-#                         # Launch the generated report in the system's default native browser window
+#                         # Launch generated report in separate default browser window tab
 #                         webbrowser.open_new_tab(output_filename)
-                        
-#                         # Save path context to session state memory
 #                         st.session_state[report_file_key] = output_filename
 #                     else:
 #                         st.error("Data frame state not found. Please reload the document file.")
                 
-#                 # Display structural breadcrumb logs if file already exists in directory
 #                 if report_file_key in st.session_state:
 #                     existing_path = st.session_state[report_file_key]
 #                     st.success(f"✅ Active profile generated successfully! Saved locally as: `{existing_path}`")
                     
-#                     # Provide an option to re-open the external window tab if closed by user
 #                     if st.button(f"🔄 Re-open {existing_path} in New Tab"):
 #                         webbrowser.open_new_tab(existing_path)
 
@@ -942,7 +1034,7 @@ else:
 #             st.session_state.bm25_index = None
 #             st.session_state.faiss_index = None
             
-#             # Wipe stored dataframes and generated file paths out of state memory
+#             # Wipe stored dataframes and paths out of state memory
 #             for key in list(st.session_state.keys()):
 #                 if key.startswith("df_") or key.startswith("report_path_"):
 #                     del st.session_state[key]
@@ -950,4 +1042,8 @@ else:
 #             st.rerun()
 # else:
 #     st.warning("⚠️ Drop a valid .gguf model file into the sidebar uploader to launch execution matrices.")
+
+
+
+
 

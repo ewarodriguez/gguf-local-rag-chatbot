@@ -12,3 +12,5 @@ models/
 local_models/
 
 run_app.py
+
+*.html
