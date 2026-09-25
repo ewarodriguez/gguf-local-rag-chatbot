@@ -343,12 +343,47 @@ if selected_model_name:
             punctuation_table = str.maketrans("", "", '?.!,-_')
             clean_tokens = set(user_query.lower().translate(punctuation_table).split())
 
-            greetings = {"hi", "hello", "hey", "greetings", "yo", "there"}
-            gratitude = {"thank", "thanks", "thankyou", "appreciate", "helpful", "much", "so", "for", "the", "help"}
-            farewells = {"bye", "goodbye", "later", "see", "you", "quit", "exit"}
-            all_chitchat_words = greetings | gratitude | farewells
+            # -----------------------------------------------------------------
+            # HIGH-CAPACITY EXPANDED ENGLISH CHITCHAT VOCABULARY MATRIX
+            # -----------------------------------------------------------------
+            greetings = {
+                "hi", "hello", "hey", "greetings", "yo", "there", "sup", "morning", 
+                "afternoon", "evening", "howdy", "welcome", "heya", "whatsup"
+            }
+            
+            gratitude = {
+                "thank", "thanks", "thankyou", "appreciate", "helpful", "much", 
+                "so", "for", "the", "help", "grateful", "obliged", "cheers", 
+                "thanking", "appreciation", "kind", "helper", "kindness"
+            }
+            
+            praise_affirmation = {
+                "good", "great", "awesome", "perfect", "excellent", "amazing", 
+                "wonderful", "cool", "nice", "job", "work", "wow", "yes", "yeah", 
+                "yup", "ok", "okay", "fine", "sure", "correct", "right", "brilliant",
+                "fantastic", "sweet", "rock", "genius", "smart", "incredible", "love",
+                "superb", "terrific", "spot", "on", "exactly", "indeed", "gotcha", "yep",
+                "well", "done", "neat", "fabulous", "outstanding"  # FIX: Added outstanding
+            }
+            
+            farewells = {
+                "bye", "goodbye", "later", "see", "you", "quit", "exit", "close", 
+                "stop", "end", "leave", "done", "peace"
+            }
+            
+            conversational_fillers = {
+                "chatbot", "bot", "ai", "assistant", "computer", "machine", "system",
+                "who", "are", "you", "what", "is", "your", "name", "can", "do", "how",
+                "old", "creator", "made", "built", "dude", "mate", "uh", "um", "er", "hmm",
+                "very"  # FIX: Added very to catch modifier phrases like "very good"
+            }
 
+            # Unify all expanded English categories into one massive keyword net
+            all_chitchat_words = greetings | gratitude | praise_affirmation | farewells | conversational_fillers
+
+            # Flexible intersection-based chitchat bypass rule (Your preferred logic)
             is_chitchat = len(clean_tokens.intersection(all_chitchat_words)) > 0
+
 
             messages = []
             engines_used = []
@@ -357,7 +392,7 @@ if selected_model_name:
             if is_chitchat:
                 messages.append({
                     "role": "system",
-                    "content": "You are a friendly companion. Respond to the user's greeting, gratitude, or farewell warmly and naturally in one short sentence."
+                    "content": "You are a friendly companion. Respond to the user's greeting, gratitude, or praise warmly, naturally, and concisely in one short sentence."
                 })
                 messages.append({
                     "role": "user",
@@ -449,7 +484,6 @@ if selected_model_name:
                 })
             else:
                 st.error("Error: Local AI engine model weights configuration missing.")
-
 
     # -----------------------------------------------------------------------------
     # 5. CHAT AND STREAMING INFERENCE LOGIC (Part 5 - Section B)
