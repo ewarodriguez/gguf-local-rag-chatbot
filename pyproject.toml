@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
+
+
+# 1. RUNTIME DEPENDENCIES (These go into your final app)
 dependencies = [
     "docling>=2.129.0",
     "docx2txt>=0.9",
@@ -13,7 +16,6 @@ dependencies = [
     "langchain-huggingface>=1.2.2",
     "llama-cpp-python>=0.3.34",
     "openpyxl>=3.1.5",
-    "pypdf>=6.14.2",
     "python-docx>=1.2.0",
     "rank-bm25>=0.2.2",
     "sentence-transformers>=5.7.0",
@@ -21,10 +23,14 @@ dependencies = [
     "torchvision>=0.28.0",
 ]
 
+
+
+
 [[tool.uv.index]]
-name = "llama-cpu"
-url = "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-llama-cpp-python = { index = "llama-cpu" }
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }

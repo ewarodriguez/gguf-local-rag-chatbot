@@ -86,6 +86,10 @@ def extract_and_chunk_pdf_with_docling(uploaded_file):
 
 
     temp_path = f"temp_{uploaded_file.name}"
+
+    # NEW DYNAMIC TRACKING MESSAGE
+    st.markdown(f"*Creating Temp - {uploaded_file.name}...*")
+
     with open(temp_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
         
@@ -582,7 +586,7 @@ if selected_model_name:
                     df_to_analyze = st.session_state.get(f"df_{doc.name}")
                     if df_to_analyze is not None:
                         # LAZY-LOADING IMPORT OPTIMIZATION: Loaded only when button is clicked
-                        from ydata_profiling import ProfileReport
+                        from data_profiling  import ProfileReport
 
                         # OPTIMIZATION: 5MB threshold protects system RAM alongside the local GGUF model
                         is_large_file = doc.size > (5 * 1024 * 1024)
@@ -639,20 +643,22 @@ if selected_model_name:
                         with open(existing_path, "r", encoding="utf-8") as f:
                             html_bytes = f.read()
                         
-                        col1, col2 = st.columns(2)
+                        # Set up a tight, clean side-by-side grid below the headers
+                        col1, col2 = st.columns([1, 1.2]) 
                         with col1:
-                            if st.button(f"🔄 Re-open in Local Browser Tab", key=f"open_{existing_path}"):
+                            if st.button(f"🔄 Re-open Tab", key=f"open_{existing_path}", use_container_width=True):
                                 try:
                                     webbrowser.open_new_tab(existing_path)
                                 except Exception:
                                     st.error("Could not trigger browser tab natively.")
                         with col2:
                             st.download_button(
-                                label="💾 Download Profiling Report (.html)", 
+                                label="💾 Download Report (.html)", 
                                 data=html_bytes,
                                 file_name=existing_path, 
                                 mime="text/html", 
-                                key=f"dl_{existing_path}"
+                                key=f"dl_{existing_path}",
+                                use_container_width=True
                             )
 
     # -----------------------------------------------------------------------------

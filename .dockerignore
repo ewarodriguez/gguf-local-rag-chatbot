@@ -1,0 +1,119 @@
+# Block local python cache files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Block local development environments and credentials
+.uv
+.venv/
+venv
+.env
+.git/
+.gitignore
+.gitattributes
+
+# Block OS specific metadata junk
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# PRODUCTION SCRUB: Block raw data and docs
+# ==========================================
+*.csv
+*.xlsx
+*.md
+data/
+notebooks/
+.devcontainer
+
+# Block specific local runner scripts
+run_app.py
+
+# Block local python cache files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Block local development environments and credentials
+.uv
+.venv/
+venv
+.env
+.git/
+.gitignore
+
+# Block OS specific metadata junk
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# PRODUCTION SCRUB: Block raw data and docs
+# ==========================================
+*.csv
+*.xlsx
+*.md
+data/
+notebooks/
+local_transformer_cache/
+.devcontainer
+
+# Block specific local runner scripts
+run_app.py
+
+# --- Version Control & OS Trash ---
+.git/
+.gitignore
+.gitattributes
+.DS_Store
+Thumbs.db
+
+# --- Python & Dependency Bloat ---
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.python-version
+
+# --- Machine Learning & Heavy Data Bloat ---
+.cache/
+models/
+huggingface/
+.huggingface/
+data/
+datasets/
+*.pkl
+*.h5
+*.pth
+*.onnx
+*.pb
+
+# --- Streamlit Theme Handling ---
+.streamlit/*
+!.streamlit/config.toml
+.streamlit/credentials.toml
+
+# --- Testing & Code Quality Tools ---
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+.flake8
+.black
+.ruff_cache/
+.mypy_cache/
+
+# --- IDEs & Local Text Editors ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Exclude your local runtime model caches from the build context
+.cache_storage/
