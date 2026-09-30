@@ -8,7 +8,7 @@ requires-python = ">=3.11"
 
 # 1. RUNTIME DEPENDENCIES (These go into your final app)
 dependencies = [
-    "docling>=2.129.0",
+    "docling==2.55.1",
     "docx2txt>=0.9",
     "faiss-cpu>=1.15.0",
     "fg-data-profiling>=4.20.0",
@@ -20,11 +20,15 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "sentence-transformers>=5.7.0",
     "streamlit>=1.60.0",
+    "torch>=2.14.0",
     "torchvision>=0.28.0",
 ]
 
 
-
+[[tool.uv.index]]
+name = "llama-cpp-python"
+url = "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -32,5 +36,8 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
+llama-cpp-python = { index = "llama-cpp-python" }
 torch = { index = "pytorch-cpu" }
 torchvision = { index = "pytorch-cpu" }
+
+

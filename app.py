@@ -88,10 +88,19 @@ def extract_and_chunk_pdf_with_docling(uploaded_file):
     temp_path = f"temp_{uploaded_file.name}"
 
     # NEW DYNAMIC TRACKING MESSAGE
-    st.markdown(f"*Creating Temp - {uploaded_file.name}...*")
 
+    # 1. Create an empty placeholder for dynamic status updates
+    status_placeholder = st.empty()
+    
+    # 2. First message: Creating the temp file
+    status_placeholder.markdown(f"*Creating Temp - {uploaded_file.name}...*")
+    
+    temp_path = f"temp_{uploaded_file.name}"
     with open(temp_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
+        
+    # 3. Second message: Overwrites the first message once the file is created
+    status_placeholder.markdown(f"✅ *Temp file created successfully for {uploaded_file.name}!*")
         
     try:
         pipeline_options = PdfPipelineOptions()
@@ -138,7 +147,9 @@ def extract_and_chunk_pdf_with_docling(uploaded_file):
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+        status_placeholder.empty()  
 
+        
 # -----------------------------------------------------------------------------
 # HIGH-FIDELITY FALLBACK PARSERS (Optimized for DOCX, Tables, and TXT)
 # -----------------------------------------------------------------------------

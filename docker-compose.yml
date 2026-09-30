@@ -12,23 +12,19 @@ services:
       - .:/app
       # PROTECTS the virtual environment from being overwritten by your local files
       - /app/.venv/
-      # PERSISTS ML models on your host machine so they don't bloat the container
-      - hf-cache:/home/nonroot/.cache/huggingface
+      # COMMENTED OUT: Keeping it simple and independent of host volumes
+      # - ./.model_cache:/home/nonroot/.cache
     environment:
       - STREAMLIT_SERVER_HEADLESS=true
       - STREAMLIT_SERVER_FILE_WATCHER_TYPE=poll
-      # FIX: Routes Hugging Face safely to the authorized nonroot home path
+      # Routes Hugging Face safely to the authorized nonroot home path
       - HF_HOME=/home/nonroot/.cache/huggingface
-      # Directs both libraries to write directly into that mapped cache storage folder
-      - DOCLING_CACHE_DIR=/home/nonroot/.cache/docling
-      # FIX: Silences warnings by cleanly routing the Matplotlib sandbox to /tmp
-      # - MPLCONFIGDIR=/tmp/matplotlib
+      # Routes Docling's independent table models out of the container layout
+      - DOCLING_SERVE_ARTIFACTS_PATH=/home/nonroot/.cache/docling/models
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-volumes:
-  hf-cache:
 
