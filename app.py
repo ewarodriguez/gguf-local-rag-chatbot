@@ -15,11 +15,11 @@ MODEL_DIR = "local_models"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 st.set_page_config(page_title="Universal File Explorer", layout="wide")
-st.title("🕵️‍♂️ Universal File Explorer 📂")
+st.title("🕵️‍♂️ Universal File Explorer (RAG Chatbot) 📂")
 st.caption("100% Private local execution using GGUF models on your CPU.")
 
 # OPTIMIZATION: Cached resource pinned strictly to your CPU
-@st.cache_resource(show_spinner="Loading Embedding Model(all-MiniLM-L6-v2)...")
+@st.cache_resource(show_spinner="Loading Embedding Model (all-MiniLM-L6-v2)...")
 def load_embedding_model():
     return HuggingFaceEmbeddings(
         model_name="all-MiniLM-L6-v2",
@@ -27,6 +27,9 @@ def load_embedding_model():
     )
 
 embeddings = load_embedding_model()
+
+if "uploader_key_version" not in st.session_state:
+    st.session_state["uploader_key_version"] = 0
 
 # -----------------------------------------------------------------------------
 # 1. SIDEBAR CONFIGURATION (Models & Files)
@@ -64,7 +67,8 @@ with st.sidebar:
     uploaded_docs = st.file_uploader(
         "Upload file here:", 
         type=["pdf", "docx", "xlsx", "xls", "csv", "txt"], 
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key=f"file_uploader_v_{st.session_state['uploader_key_version']}"
     )
 
 
@@ -337,14 +341,42 @@ def load_selected_llm(model_name):
     return Llama(
         model_path=model_path, 
         n_ctx=max_context,   
-        # i5-1035G1 has 4 physical cores / 8 threads. 5 threads balances background execution perfectly.
-        n_threads=max(1, min(5, os.cpu_count() - 2)), 
-        n_batch=128,                           
+        # i5-1035G1 has 4 physical cores. Hardcoding 4 threads maximizes processing speed
+        # without falling into the hyper-threading thrashing trap.
+        n_threads=4, 
+        # Drastically reduces the "Time-to-First-Token" lag when handling heavy RAG context chunks
+        n_batch=16,                           
         n_gpu_layers=0,                        # Kept at 0. Laptop integrated chips cannot offload modern GGUFs safely.
         use_mmap=True,                         # High-Speed SSD optimization: streams weights instantly without clogging system RAM
         use_mlock=False,                       
         verbose=False
     )
+
+# @st.cache_resource(show_spinner="Initializing Local AI Engine (This might take a moment)...")
+# def load_selected_llm(model_name):
+#     if not model_name:
+#         return None
+#     model_path = os.path.join(MODEL_DIR, model_name)
+    
+#     # Balanced context bounds to ensure your 16GB RAM stays fluid alongside active browser tasks
+#     if "1.5b" in model_name.lower():
+#         max_context = 4096  
+#     elif "3b" in model_name.lower():
+#         max_context = 3072  # Optimal processing roof for Llama 3.2 3B on laptop architectures
+#     else:
+#         max_context = 2048   
+        
+#     return Llama(
+#         model_path=model_path, 
+#         n_ctx=max_context,   
+#         # i5-1035G1 has 4 physical cores / 8 threads. 5 threads balances background execution perfectly.
+#         n_threads=max(1, min(5, os.cpu_count() - 2)), 
+#         n_batch=128,                           
+#         n_gpu_layers=0,                        # Kept at 0. Laptop integrated chips cannot offload modern GGUFs safely.
+#         use_mmap=True,                         # High-Speed SSD optimization: streams weights instantly without clogging system RAM
+#         use_mlock=False,                       
+#         verbose=False
+#     )
 
 # -----------------------------------------------------------------------------
 # 4. ENSEMBLE RETRIEVAL FUNCTION WITH METADATA TRACKING
@@ -656,12 +688,12 @@ if selected_model_name:
                         
                         # Set up a tight, clean side-by-side grid below the headers
                         col1, col2 = st.columns([1, 1.2]) 
-                        with col1:
-                            if st.button(f"🔄 Re-open Tab", key=f"open_{existing_path}", use_container_width=True):
-                                try:
-                                    webbrowser.open_new_tab(existing_path)
-                                except Exception:
-                                    st.error("Could not trigger browser tab natively.")
+                        # with col1:
+                        #     if st.button(f"🔄 Re-open Tab", key=f"open_{existing_path}", use_container_width=True):
+                        #         try:
+                        #             webbrowser.open_new_tab(existing_path)
+                        #         except Exception:
+                        #             st.error("Could not trigger browser tab natively.")
                         with col2:
                             st.download_button(
                                 label="💾 Download Report (.html)", 
@@ -671,20 +703,38 @@ if selected_model_name:
                                 key=f"dl_{existing_path}",
                                 use_container_width=True
                             )
-
     # -----------------------------------------------------------------------------
     # GLOBAL MEMORY PURGE
     # -----------------------------------------------------------------------------
     if st.session_state["chat_history"]:
         st.write("") 
         if st.button("🗑️ Clear Chat History", use_container_width=False):
+            # 1. Physical File Purge Logic
+            # Point these paths directly to your container folders (e.g., UPLOAD_DIR, './data', etc.)
+            target_directories = [MODEL_DIR, "."]  # Update paths if you save them elsewhere
+            
+            for folder in target_directories:
+                if os.path.exists(folder):
+                    for filename in os.listdir(folder):
+                        # Targets exactly your target documents
+                        if filename.lower().endswith(('.pdf', '.html')):
+                            try:
+                                file_path = os.path.join(folder, filename)
+                                os.remove(file_path) [1]
+                            except Exception:
+                                pass # Prevents lockups if a file is currently being read by docling
+            
+            # 2. Existing Memory Reset Logic
             st.session_state["chat_history"] = []
             st.session_state["bm25_chunks"] = []
             st.session_state["faiss_chunks"] = []
             st.session_state["file_names"] = []
             st.session_state["bm25_index"] = None
             st.session_state["faiss_index"] = None
-            
+
+            # 3. FORCE WIPE THE UPLOADER BOX: Changes the ID string to reset the widget UI
+            st.session_state["uploader_key_version"] += 1   
+
             # Dynamically target and wipe background dataframe caching from RAM allocation
             for key in list(st.session_state.keys()):
                 if key.startswith("df_") or key.startswith("report_path_"):
