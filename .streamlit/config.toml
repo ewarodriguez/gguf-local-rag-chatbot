@@ -1,2 +1,13 @@
+[theme]
+primaryColor = "#ff79c6"          # Pastel Orchid Pink
+backgroundColor = "#282a36"       # Midnight Purple-Blue
+secondaryBackgroundColor = "#44475a" # Slate Violet for container groupings
+textColor = "#f8f8f2"            # Soft Cream White text font
+font = "sans serif"
+
+[client]
+showSidebarNavigation = true
+
+
 [server]
 maxUploadSize = 1024
