@@ -22,18 +22,23 @@ A **Streamlit** web application for chatting with your documents locally. It run
 *   **FAISS (langchain-community)**: Handles vector-based similarity search for PDFs and Word docs.
 *   **Rank-BM25**: Handles keyword matching for spreadsheets and text files.
 *   **langchain-huggingface**: Uses the `all-MiniLM-L6-v2` model to create text embeddings.
-*   **Streamlit**: Powers the user interface and chat display.
-*   **Pandas & OpenPyXL**: Used to read and extract data from spreadsheets.
-*   **PyPDF & Docx2Txt**: Extracts plain text from PDFs and Word documents.
+*   **Streamlit**: Powers the user interface(UI) and chat display.
+*   **Pandas, Openpyxl, Xlrd**: Used to read and extract data from spreadsheets.
+*   **Docling & Docx**: Extracts plain text from PDFs and Word documents.
 
 ---
 
 ## 📁 Repository Structure
 
 ```text
+├── streamlit/                   
+│   └── config.toml                          # Customize UI themes
 ├── local_models/                            # Directory where uploaded .gguf models are saved
 ├── .gitignore                               # Ignores large model files and environment folders
-└── app.py                                   # Main Streamlit application code
+└── app.py                                   # Main Streamlit application 
+├── .gitignore                               # Configuration to exclude data files and dependencies
+└── app.py                                   # Main Python App File
+└── README.md  
 ```
 
 ---
